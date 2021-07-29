@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Document</title>
+</head>
+<body>
+    <h1>Websocket-получатель сообщений ASR-сервера</h1>
+    <form action="" name="messages">
+        <div class="row"><input type="submit" value="Хочу попробовать!"></div>
+    </form>
+    <div id="status"></div>
+    <script>
+        window.onload = function() {
+            var socket = new WebSocket("ws://localhost:2700")
+            var status = document.querySelector("#status")
+            let message = "";
+
+            socket.onopen = function(event) {
+                status.innerHTML = "Connected!<br>"
+            }
+
+            socket.onclose = function(event) {
+                if (event.wasClean) {
+                    status.innerHTML = "Connection was successfully closed";
+                } else {
+                    status.innerHTML = "Connection was closed";
+                }
+                status.innerHTML = "<br>code: " + event.code + ", reason: " + event.reason;
+            }
+
+            socket.onmessage = function(event) {
+                let message = JSON.parse(event.data);
+                if (message.text) {
+                    status.innerHTML += " <b>" + message.text + "<br></b>";
+                }
+            }
+
+            socket.onerror = function(event) {
+                status.innerHTML = "Error:" + event.message;
+            }
+
+            document.forms["messages"].onsubmit = function() {
+                let message = {
+                    text: this.msg.value
+                }
+                socket.send(JSON.stringify(message));
+                return false;
+            }
+        }
+
+    </script>
+</body>
+</html>

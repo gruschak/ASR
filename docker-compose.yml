@@ -1,0 +1,32 @@
+version: "3.5"
+
+services:
+
+  vosk-server:
+    build: ./vosk
+    restart: "no"
+    ports:
+      - ${VOSK_SERVER_PORT}:${VOSK_SERVER_PORT}
+    volumes:
+      - ./vosk/src:/app
+    environment:
+      - VOSK_SERVER_IP_ADDR=${VOSK_SERVER_IP_ADDR}
+      - VOSK_SERVER_PORT=${VOSK_SERVER_PORT}
+      - VOSK_MODEL_DIR=${VOSK_MODEL_DIR}
+      - VOSK_SAMPLE_RATE=${VOSK_SAMPLE_RATE}
+      - VOSK_ALTERNATIVES=${VOSK_ALTERNATIVES}
+    command: python ./asr_server/asr_server.py
+
+  vosk-client:
+    build: ./client
+    restart: "no"
+    volumes:
+      - ./client/src:/app
+    devices:
+      - "/dev/snd:/dev/snd"
+    environment:
+      - VOSK_SERVER_IP_ADDR=${VOSK_SERVER_IP_ADDR}
+      - VOSK_SERVER_PORT=${VOSK_SERVER_PORT}
+      - SAMPLE_RATE=${SAMPLE_RATE}
+      - FRAMES_PER_BUFFER=${FRAMES_PER_BUFFER}
+    command: python ./client_mic.py vosk-server:2700
