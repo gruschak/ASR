@@ -1,89 +1,67 @@
 #!/usr/bin/env python3
 
-import asyncio
-import os
+"""
+Для работы с ALSA через PortAudio применяется библиотека sounddevice.
+"""
 
-import websockets
+import logging
+import queue
+import sounddevice as sd
 import sys
-from pyaudio import PyAudio, Stream, paInt16
-from contextlib import asynccontextmanager, contextmanager, AsyncExitStack
-from typing import AsyncGenerator, Generator
+import asyncio
+import websockets
+import json
+
+from client_env import get_env
+
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+que = queue.Queue()
+env = get_env()
 
 
-@contextmanager
-def _pyaudio() -> Generator[PyAudio, None, None]:
-    p = PyAudio()
-    try:
-        yield p
-    finally:
-        print('Terminating PyAudio object')
-        p.terminate()
+def callback(indata, frames, time, status):
+    """This is called (from a separate thread) for each audio block."""
+    if status:
+        logging.debug(f'{status=}')
+    que.put(bytes(indata))
 
 
-@contextmanager
-def _pyaudio_open_stream(p: PyAudio, *args, **kwargs) -> Generator[Stream, None, None]:
-    s = p.open(*args, **kwargs)
-    try:
-        yield s
-    finally:
-        print('Closing PyAudio Stream')
-        s.close()
+async def link_queue_to_ws(q: queue.Queue):
+    """ Осуществляет подключение к websocket-серверу и перебрасывание
+        поступающих в очередь данных в серверный сокет """
+    async with websockets.connect(f"ws://{env.ip_addr}:{env.port}") as websocket:
 
-
-@asynccontextmanager
-async def _polite_websocket(ws: websockets.WebSocketClientProtocol) -> AsyncGenerator[websockets.WebSocketClientProtocol, None]:
-    try:
-        yield ws
-    finally:
-        print('Terminating connection')
-        await ws.send('{"eof" : 1}')
-        print(await ws.recv())
-
-
-async def run_test(uri):
-
-    async with AsyncExitStack() as stack:
-        ws = await stack.enter_async_context(websockets.connect(uri))
-        print(f'Connected to {uri}')
-        print('Type Ctrl-C to exit')
-        ws = await stack.enter_async_context(_polite_websocket(ws))
-        p = stack.enter_context(_pyaudio())
-        s = stack.enter_context(_pyaudio_open_stream(
-            p,
-            format=paInt16,
-            channels=1,
-            rate=int(os.getenv("SAMPLE_RATE", 16000)),
-            input=True,
-            frames_per_buffer=int(os.getenv("FRAMES_PER_BUFFER", 8000))
-        ))
         while True:
-            data = s.read(8000)
-            if len(data) == 0:
-                break
-            await ws.send(data)
-            print(await ws.recv())
+            data = q.get()
+            await websocket.send(data)
+
+            received_data = await websocket.recv()
+            msg = json.loads(received_data)
+            if msg.get("text"):
+                logging.info(f'< {msg["text"]=}')
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
-    if len(sys.argv) == 2:
-        server_uri = sys.argv[1]
-    else:
-        server_uri = 'localhost:2700'
-
-    loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(
-            run_test('ws://' + server_uri)
-        )
-    except (KeyboardInterrupt, Exception) as e:
-        loop.stop()
-        loop.run_until_complete(
-            loop.shutdown_asyncgens()
-        )
-        if isinstance(e, KeyboardInterrupt):
-            print('Bye!')
-            exit(0)
-        else:
-            print(f'Oops! {e}')
-            exit(1)
+        if env.samplerate is None:
+            device_info = sd.query_devices(kind='input')
+            env.samplerate = int(device_info['default_samplerate'])
+
+        with sd.RawInputStream(samplerate=env.samplerate,
+                               blocksize=env.blocksize,
+                               dtype='int16',
+                               channels=1,
+                               callback=callback):
+            logging.info('------------------ Press Ctrl+C to stop the recording ------------------')
+            asyncio.get_event_loop().run_until_complete(link_queue_to_ws(que))
+    except KeyboardInterrupt:
+        logging.info('\nDone')
+        sys.exit(0)
+    except Exception as e:
+        logging.exception(f'{e}')
+        sys.exit(f'{type(e).__name__} : {e}')

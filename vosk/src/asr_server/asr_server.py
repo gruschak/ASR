@@ -8,7 +8,13 @@ import functools
 import logging
 from typing import Tuple, Any
 from vosk import Model, KaldiRecognizer
-from env import get_env
+from asr_env import get_env
+
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 
 def process_chunk(rec, message) -> Tuple[Any, bool]:
@@ -20,19 +26,14 @@ def process_chunk(rec, message) -> Tuple[Any, bool]:
         return rec.PartialResult(), False
 
 
-async def recognize(websocket, path, env, model, pool, loop, connected):
-
-    # Create the recognizer
-    sample_rate = env.sample_rate
-    max_alternatives = env.max_alternatives
-    recognizer = KaldiRecognizer(model, sample_rate)
-    recognizer.SetMaxAlternatives(max_alternatives)
+async def accept_connection(websocket, path, recognizer, pool, connected):
 
     logging.info(f'Connection from {websocket.remote_address}')
     connected.add(websocket)
 
     try:
 
+        loop = asyncio.get_running_loop()
         while True:
             message = await websocket.recv()
             response, stop = await loop.run_in_executor(pool, process_chunk, recognizer, message)
@@ -43,19 +44,12 @@ async def recognize(websocket, path, env, model, pool, loop, connected):
                 break
 
     except websockets.ConnectionClosed as e:
-        logging.info(f'ASR lost connection {websocket.remote_address}: {e!s}')
+        logging.info(f'Lost connection {websocket.remote_address}: {e}')
     finally:
         connected.remove(websocket)
 
 
 def start_ws_server():
-
-    # Enable logging if needed
-    #
-    # logger = logging.getLogger('websockets')
-    # logger.setLevel(logging.INFO)
-    # logger.addHandler(logging.StreamHandler())
-    logging.basicConfig(level=logging.INFO)
 
     # Gpu part, uncomment if vosk-api has gpu support
     #
@@ -71,10 +65,14 @@ def start_ws_server():
     loop = asyncio.get_event_loop()
     connected = set()
 
-    recognize_handler = functools.partial(recognize, env=env, model=model, pool=pool, loop=loop, connected=connected)
-    start_server = websockets.serve(recognize_handler, env.ip_addr, env.port)
+    # Create the recognizer
+    recognizer = KaldiRecognizer(model, env.samplerate)
+    recognizer.SetMaxAlternatives(env.max_alternatives)
 
-    logging.info(f'Listening on {env.ip_addr} {env.port}')
+    handle_connection = functools.partial(accept_connection, recognizer=recognizer, pool=pool, connected=connected)
+    start_server = websockets.serve(handle_connection, env.ip_addr, env.port)
+
+    logging.info(f'Listening on {env.ip_addr}:{env.port}')
     loop.run_until_complete(start_server)
     loop.run_forever()
 

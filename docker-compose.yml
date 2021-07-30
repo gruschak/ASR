@@ -13,7 +13,7 @@ services:
       - VOSK_SERVER_IP_ADDR=${VOSK_SERVER_IP_ADDR}
       - VOSK_SERVER_PORT=${VOSK_SERVER_PORT}
       - VOSK_MODEL_DIR=${VOSK_MODEL_DIR}
-      - VOSK_SAMPLE_RATE=${VOSK_SAMPLE_RATE}
+      - VOSK_SAMPLERATE=${VOSK_SAMPLERATE}
       - VOSK_ALTERNATIVES=${VOSK_ALTERNATIVES}
     command: python ./asr_server/asr_server.py
 
@@ -27,6 +27,8 @@ services:
     environment:
       - VOSK_SERVER_IP_ADDR=${VOSK_SERVER_IP_ADDR}
       - VOSK_SERVER_PORT=${VOSK_SERVER_PORT}
-      - SAMPLE_RATE=${SAMPLE_RATE}
-      - FRAMES_PER_BUFFER=${FRAMES_PER_BUFFER}
-    command: python ./client_mic.py vosk-server:2700
+      - SAMPLERATE=${CLIENT_SAMPLERATE}
+      - BLOCKSIZE=${CLIENT_FRAMES_PER_BUFFER}
+    command: python ./client_mic.py
+    depends_on:
+      - vosk-server

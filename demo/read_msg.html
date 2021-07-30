@@ -12,9 +12,8 @@
     <div id="status"></div>
     <script>
         window.onload = function() {
-            var socket = new WebSocket("ws://localhost:2700")
-            var status = document.querySelector("#status")
-            let message = "";
+            const socket = new WebSocket("ws://localhost:2700");
+            let status = document.querySelector("#status");
 
             socket.onopen = function(event) {
                 status.innerHTML = "Connected!<br>"
