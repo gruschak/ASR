@@ -11,6 +11,7 @@ import sys
 import asyncio
 import websockets
 import json
+import pprint
 
 from client_env import get_env
 
@@ -30,14 +31,15 @@ def callback(indata, frames, time, status):
     que.put(bytes(indata))
 
 
-async def link_queue_to_ws(q: queue.Queue):
+async def link_queue_to_ws(q: queue.Queue, ws_uri=f"ws://{env.ip_addr}:{env.port}"):
     """ Осуществляет подключение к websocket-серверу и перебрасывание
-        поступающих в очередь данных в серверный сокет """
-    async with websockets.connect(f"ws://{env.ip_addr}:{env.port}") as websocket:
+        поступающих в очередь данных в серверный сокет. """
+    async with websockets.connect(ws_uri) as websocket:
 
         while True:
             data = q.get()
             await websocket.send(data)
+            # logging.info(f'> {len(data)}')
 
             received_data = await websocket.recv()
             msg = json.loads(received_data)
@@ -47,16 +49,23 @@ async def link_queue_to_ws(q: queue.Queue):
 
 if __name__ == "__main__":
 
+    samplerate = env.samplerate
     try:
-        if env.samplerate is None:
-            device_info = sd.query_devices(kind='input')
-            env.samplerate = int(device_info['default_samplerate'])
+        device_info = sd.query_devices(kind="input")
+        logging.info('\n' + pprint.pformat(device_info))
+        logging.info("*" * 80)
 
-        with sd.RawInputStream(samplerate=env.samplerate,
-                               blocksize=env.blocksize,
-                               dtype='int16',
-                               channels=1,
-                               callback=callback):
+        if not samplerate:
+            samplerate = int(device_info["default_samplerate"])
+
+        with sd.RawInputStream(
+                samplerate=samplerate,
+                blocksize=env.blocksize,
+                dtype='int16',
+                channels=1,
+                callback=callback
+        ):
+            logging.info(f'Started with {samplerate=}')
             logging.info('------------------ Press Ctrl+C to stop the recording ------------------')
             asyncio.get_event_loop().run_until_complete(link_queue_to_ws(que))
     except KeyboardInterrupt:
