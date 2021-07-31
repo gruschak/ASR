@@ -2,36 +2,67 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Document</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
 </head>
 <body>
-    <h1>Websocket-получатель сообщений ASR-сервера</h1>
-    <form action="" name="messages">
-        <div class="row"><input type="submit" value="Хочу попробовать!"></div>
-    </form>
-    <div id="status"></div>
+    <section class="section">
+        <h3 class="title is-3">Websocket-получатель сообщений ASR-сервера</h3>
+        <div class="columns">
+            <div class="column is-three-quarters">
+                <div class="block">
+                    Для сеанса работы с сервером распознавания речи потребуется <strong>микрофон</strong>. Если микрофон подключен и готов к работе, нажмите на педальку!
+                </div>
+                <div class="block">
+                    <div class="control">
+                        <a class="button is-primary is-medium ml-5" onclick="onStartButtonPressed()">
+                            Start
+                        </a>
+                        <a class="button is-danger is-medium ml-5" onclick="onCancelButtonPressed()">
+                            Cancel
+                        </a>
+                    </div>
+                </div>
+                <textarea class="textarea is-primary" placeholder="Primary textarea"></textarea>
+                <footer class="footer">
+                    <div class="status has-left-centered">
+                        <p>
+                            <strong>BARS Group</strong>
+                        </p>
+                    </div>
+                </footer>
+            </div>
+        </div>
+    </section>
+
     <script>
-        window.onload = function() {
-            const socket = new WebSocket("ws://localhost:2700");
-            let status = document.querySelector("#status");
+        const uri = "ws://localhost:2700";
+        let ws = null;
+        let resultText = document.querySelector(".textarea");
+        let status = document.querySelector(".status");
+
+        initConnection = function() {
+
+            socket = new WebSocket(uri);
 
             socket.onopen = function(event) {
-                status.innerHTML = "Connected!<br>"
+                status.innerHTML = "<strong>Connected</strong> at " + uri;
             }
 
             socket.onclose = function(event) {
                 if (event.wasClean) {
-                    status.innerHTML = "Connection was successfully closed";
+                    status.innerHTML = "<strong>Connection was successfully closed</strong>";
                 } else {
-                    status.innerHTML = "Connection was closed";
+                    status.innerHTML = "<strong>Connection dropped!</strong> " +
+                        "(code: " + event.code + ", reason: " + event.reason + ")";
                 }
-                status.innerHTML = "<br>code: " + event.code + ", reason: " + event.reason;
             }
 
             socket.onmessage = function(event) {
                 let message = JSON.parse(event.data);
                 if (message.text) {
-                    status.innerHTML += " <b>" + message.text + "<br></b>";
+                    resultText.value += message.text + "\n";
                 }
             }
 
@@ -39,13 +70,26 @@
                 status.innerHTML = "Error:" + event.message;
             }
 
-            document.forms["messages"].onsubmit = function() {
-                let message = {
-                    text: this.msg.value
+            return socket;
+        }
+
+        window.onload = function() {
+
+            ws = initConnection();
+
+            onStartButtonPressed = function() {
+                if (!ws || [ws.CONNECTING, ws.OPEN].indexOf(ws.readyState) === -1) {
+                    ws = initConnection();
+                    resultText.value = "";
                 }
-                socket.send(JSON.stringify(message));
-                return false;
             }
+
+            onCancelButtonPressed = function() {
+                if (ws || [ws.CLOSING, ws.CLOSED].indexOf(ws.readyState) === -1) {
+                    ws.close();
+                }
+            }
+
         }
 
     </script>
